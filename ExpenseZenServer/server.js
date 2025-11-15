@@ -42,14 +42,20 @@ app.get('/', (req, res) => {
 // Import route modules
 const authRoutes = require('./routes/auth');
 const expenseRoutes = require('./routes/expenses');
-const incomeRoutes = require('./routes/income');        // for future income tracking
-const analyticsRoutes = require('./routes/analytics');  // for future analytics
+const incomeRoutes = require('./routes/income');
+const analyticsRoutes = require('./routes/analytics');
 
-// Mount routes after DB connection
+// ⭐ NEW — Loan route import
+const loanRoutes = require('./routes/loan');
+
+// Mount routes
 app.use('/api/auth', authRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/income', incomeRoutes);
 app.use('/api/analytics', analyticsRoutes);
+
+// ⭐ NEW — Mount loan route
+app.use('/api/loan', loanRoutes);
 
 // 404 handler
 app.use((req, res) => {

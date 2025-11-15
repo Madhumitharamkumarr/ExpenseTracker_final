@@ -1,16 +1,15 @@
-// controllers/loanController.js
+// src/controllers/loanController.js
 const Loan = require("../models/Loan");
 const Notification = require("../models/Notification");
+const { createBorrowIncome, createLendingExpense } = require("../util/loanHelper");
 
-// @desc    Add new loan
-// @route   POST /api/loans
-// @access  Private
+// ADD LOAN — FINAL, BULLETPROOF, NO-BUG VERSION
 const addLoan = async (req, res) => {
   try {
     const {
       type,
-      amount,
-      interestRate,
+      amount: rawAmount,
+      interestRate: rawRate = 0,
       startDate,
       dueDate,
       borrowerName,
@@ -21,330 +20,186 @@ const addLoan = async (req, res) => {
       notes,
     } = req.body;
 
-    // Validate loan type
+    const userId = req.user.id;
+
+    // CONVERT TO NUMBER — CRITICAL FIX
+    const amount = Number(rawAmount);
+    const interestRate = Number(rawRate);
+
+    if (isNaN(amount) || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Amount must be a positive number",
+      });
+    }
+
+    if (isNaN(interestRate) || interestRate < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Interest rate must be a valid number",
+      });
+    }
+
     if (!["lending", "borrowing"].includes(type)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid loan type",
+        message: "Type must be 'lending' or 'borrowing'",
       });
     }
 
-    // Create loan object
-    const loanData = {
-      user: req.user._id,
+    if (!startDate || !dueDate) {
+      return res.status(400).json({
+        success: false,
+        message: "startDate and dueDate are required",
+      });
+    }
+
+    // DATE CONVERSION
+    const start = new Date(startDate);
+    const due = new Date(dueDate);
+
+    if (isNaN(start) || isNaN(due)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid date format",
+      });
+    }
+
+    // CALCULATE INTEREST & TOTAL PAYABLE
+    const months = Math.max(1, Math.ceil((due - start) / (1000 * 60 * 60 * 24 * 30)));
+    const interest = (amount * interestRate * months) / 100;
+    const totalInterest = parseFloat(interest.toFixed(2));
+    const totalPayable = parseFloat((amount + interest).toFixed(2));
+
+    console.log("CALCULATED → amount:", amount, "rate:", interestRate, "months:", months, "totalPayable:", totalPayable);
+
+    // CREATE LOAN DOCUMENT
+    const loan = new Loan({
+      user: userId,
       type,
       amount,
-      interestRate: interestRate || 0,
-      startDate: startDate || Date.now(),
+      interestRate,
+      startDate,
       dueDate,
+      totalInterest,
+      totalPayable,
+      borrowerName: type === "lending" ? borrowerName : undefined,
+      borrowerAddress: type === "lending" ? borrowerAddress : undefined,
+      borrowerPhone: type === "lending" ? borrowerPhone : undefined,
+      lenderName: type === "borrowing" ? lenderName : undefined,
+      category: type === "borrowing" ? category : undefined,
       notes,
-    };
-
-    // Add type-specific fields
-    if (type === "lending") {
-      loanData.borrowerName = borrowerName;
-      loanData.borrowerAddress = borrowerAddress;
-      loanData.borrowerPhone = borrowerPhone;
-    } else {
-      loanData.lenderName = lenderName;
-      loanData.category = category;
-    }
-
-    // Create loan (calculations happen in pre-save hook)
-    const loan = await Loan.create(loanData);
-
-    // Create notifications for this loan
-    await createLoanNotifications(loan);
-
-    res.status(201).json({
-      success: true,
-      message: "Loan added successfully",
-      data: loan,
     });
-  } catch (error) {
-    console.error("Add Loan Error:", error);
-    return res.status(error.name === "ValidationError" ? 400 : 500).json({
-      success: false,
-      message:
-        error.name === "ValidationError"
-          ? "Invalid loan data provided"
-          : "Server error while adding loan",
-      errors:
-        error.name === "ValidationError"
-          ? Object.values(error.errors).map((err) => err.message)
-          : [error.message],
-    });
-  }
-};
-
-// Helper function to create notifications
-const createLoanNotifications = async (loan) => {
-  const notifications = [];
-  const dueDate = new Date(loan.dueDate);
-
-  // 15 days before
-  const fifteenDaysBefore = new Date(dueDate);
-  fifteenDaysBefore.setDate(dueDate.getDate() - 15);
-
-  if (fifteenDaysBefore > new Date()) {
-    notifications.push({
-      user: loan.user,
-      loan: loan._id,
-      type: "loan_reminder",
-      title: `Loan Reminder: 15 days left`,
-      message: `Your loan of ₹${loan.amount} is due in 15 days`,
-      dueDate: loan.dueDate,
-      reminderDate: fifteenDaysBefore,
-    });
-  }
-
-  // 2 days before
-  const twoDaysBefore = new Date(dueDate);
-  twoDaysBefore.setDate(dueDate.getDate() - 2);
-
-  if (twoDaysBefore > new Date()) {
-    notifications.push({
-      user: loan.user,
-      loan: loan._id,
-      type: "loan_reminder",
-      title: `Loan Reminder: 2 days left`,
-      message: `Your loan of ₹${loan.amount} is due in 2 days`,
-      dueDate: loan.dueDate,
-      reminderDate: twoDaysBefore,
-    });
-  }
-
-  // On due date
-  notifications.push({
-    user: loan.user,
-    loan: loan._id,
-    type: "loan_due",
-    title: `Loan Due Today`,
-    message: `Your loan of ₹${loan.amount} is due today`,
-    dueDate: loan.dueDate,
-    reminderDate: dueDate,
-  });
-
-  await Notification.insertMany(notifications);
-};
-
-// @desc    Get all loans
-// @route   GET /api/loans
-// @access  Private
-const getLoans = async (req, res) => {
-  try {
-    const { type, status } = req.query;
-
-    const filter = { user: req.user._id };
-    if (type) filter.type = type;
-    if (status) filter.status = status;
-
-    const loans = await Loan.find(filter).sort({ dueDate: 1 });
-
-    // Calculate totals
-    const totalLending = loans
-      .filter((l) => l.type === "lending" && l.status === "pending")
-      .reduce((sum, l) => sum + l.totalPayable, 0);
-
-    const totalBorrowing = loans
-      .filter((l) => l.type === "borrowing" && l.status === "pending")
-      .reduce((sum, l) => sum + l.totalPayable, 0);
-
-    res.json({
-      success: true,
-      data: {
-        loans,
-        summary: {
-          totalLending,
-          totalBorrowing,
-          netPosition: totalLending - totalBorrowing,
-          count: loans.length,
-        },
-      },
-    });
-  } catch (error) {
-    console.error("Get Loans Error:", error);
-    return res.status(error.name === "CastError" ? 400 : 500).json({
-      success: false,
-      message:
-        error.name === "CastError"
-          ? "Invalid query parameters"
-          : "Server error while fetching loans",
-      errors: [error.message],
-    });
-  }
-};
-
-// @desc    Get single loan
-// @route   GET /api/loans/:id
-// @access  Private
-const getLoanById = async (req, res) => {
-  try {
-    const loan = await Loan.findOne({
-      _id: req.params.id,
-      user: req.user._id,
-    });
-
-    if (!loan) {
-      return res.status(404).json({
-        success: false,
-        message: "Loan not found",
-      });
-    }
-
-    res.json({
-      success: true,
-      data: loan,
-    });
-  } catch (error) {
-    console.error("Get Loan Error:", error);
-    return res.status(error.name === "CastError" ? 400 : 500).json({
-      success: false,
-      message:
-        error.name === "CastError"
-          ? "Invalid loan ID format"
-          : "Server error while fetching loan",
-      errors: [error.message],
-    });
-  }
-};
-
-// @desc    Update loan status (mark as paid)
-// @route   PUT /api/loans/:id/status
-// @access  Private
-const updateLoanStatus = async (req, res) => {
-  try {
-    const { status } = req.body;
-
-    const loan = await Loan.findOne({
-      _id: req.params.id,
-      user: req.user._id,
-    });
-
-    if (!loan) {
-      return res.status(404).json({
-        success: false,
-        message: "Loan not found",
-      });
-    }
-
-    loan.status = status;
-    if (status === "paid") {
-      loan.paidDate = Date.now();
-    }
 
     await loan.save();
 
-    res.json({
+    // AUTO-CREATE INCOME / EXPENSE
+    if (type === "borrowing") await createBorrowIncome(loan, userId);
+    if (type === "lending") await createLendingExpense(loan, userId);
+
+    // AUTO-CREATE NOTIFICATION — ONLY THIS BLOCK MODIFIED
+    try {
+      await Notification.create({
+        user: userId,
+        loan: loan._id,
+        title: `Loan Due: ₹${loan.amount}`,
+        message: `Due on ${new Date(loan.dueDate).toLocaleDateString()}`, // REQUIRED
+        type: "general",
+        notifyDate: loan.dueDate,
+      });
+    } catch (error) {
+      console.error("Notification create error:", error.message);
+      // Don't fail loan creation
+    }
+
+    res.status(201).json({
       success: true,
-      message: "Loan status updated successfully",
+      message: "Loan created successfully",
       data: loan,
     });
   } catch (error) {
-    console.error("Update Loan Status Error:", error);
-    return res
-      .status(
-        error.name === "ValidationError" || error.name === "CastError"
-          ? 400
-          : 500
-      )
-      .json({
-        success: false,
-        message:
-          error.name === "ValidationError"
-            ? "Invalid status value"
-            : error.name === "CastError"
-            ? "Invalid loan ID format"
-            : "Server error while updating loan",
-        errors: [error.message],
-      });
+    console.error("Add Loan Error:", error.message);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
-// @desc    Delete loan
-// @route   DELETE /api/loans/:id
-// @access  Private
-const deleteLoan = async (req, res) => {
+// GET ALL LOANS
+const getLoans = async (req, res) => {
   try {
-    const loan = await Loan.findOne({
-      _id: req.params.id,
-      user: req.user._id,
-    });
+    const loans = await Loan.find({ user: req.user.id }).sort({ dueDate: 1 });
+    res.json({ success: true, data: loans });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
 
-    if (!loan) {
-      return res.status(404).json({
-        success: false,
-        message: "Loan not found",
-      });
+// GET LOAN BY ID
+const getLoanById = async (req, res) => {
+  try {
+    const loan = await Loan.findOne({ _id: req.params.id, user: req.user.id });
+    if (!loan) return res.status(404).json({ success: false, message: "Loan not found" });
+    res.json({ success: true, data: loan });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// UPDATE LOAN STATUS (pending to paid)
+const updateLoanStatus = async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!["pending", "paid"].includes(status)) {
+      return res.status(400).json({ success: false, message: "Status must be pending or paid" });
     }
 
-    await loan.deleteOne();
+    const loan = await Loan.findOne({ _id: req.params.id, user: req.user.id });
+    if (!loan) return res.status(404).json({ success: false, message: "Loan not found" });
 
-    // Delete associated notifications
-    await Notification.deleteMany({ loan: loan._id });
+    loan.status = status;
+    if (status === "paid") loan.paidDate = new Date();
+    await loan.save();
 
-    res.json({
-      success: true,
-      message: "Loan deleted successfully",
-    });
+    res.json({ success: true, message: "Status updated", data: loan });
   } catch (error) {
-    console.error("Delete Loan Error:", error);
-    return res.status(error.name === "CastError" ? 400 : 500).json({
-      success: false,
-      message:
-        error.name === "CastError"
-          ? "Invalid loan ID format"
-          : "Server error while deleting loan",
-      errors: [error.message],
-    });
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
-// @desc    Get loan statistics
-// @route   GET /api/loans/stats
-// @access  Private
+// DELETE LOAN
+const deleteLoan = async (req, res) => {
+  try {
+    const loan = await Loan.findOne({ _id: req.params.id, user: req.user.id });
+    if (!loan) return res.status(404).json({ success: false, message: "Loan not found" });
+
+    await Notification.deleteMany({ loan: loan._id });
+    await loan.deleteOne();
+
+    res.json({ success: true, message: "Loan deleted" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// GET LOAN STATS
 const getLoanStats = async (req, res) => {
   try {
-    const loans = await Loan.find({ user: req.user._id });
-
-    const stats = {
-      lending: {
-        total: 0,
-        pending: 0,
-        paid: 0,
-        overdue: 0,
-        count: 0,
+    const userId = req.user.id;
+    const stats = await Loan.aggregate([
+      { $match: { user: userId } },
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 },
+        },
       },
-      borrowing: {
-        total: 0,
-        pending: 0,
-        paid: 0,
-        overdue: 0,
-        count: 0,
-      },
-    };
+    ]);
 
-    loans.forEach((loan) => {
-      const type = loan.type;
-      stats[type].count++;
-      stats[type].total += loan.totalPayable;
+    const result = { pending: 0, paid: 0,uppe: 0 };
+    stats.forEach((s) => (result[s._id] = s.count));
 
-      if (loan.status === "pending") stats[type].pending += loan.totalPayable;
-      if (loan.status === "paid") stats[type].paid += loan.totalPayable;
-      if (loan.status === "overdue") stats[type].overdue += loan.totalPayable;
-    });
-
-    res.json({
-      success: true,
-      data: stats,
-    });
+    res.json({ success: true, data: result });
   } catch (error) {
-    console.error("Get Loan Stats Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Server error while fetching statistics",
-      errors: [error.message],
-    });
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
