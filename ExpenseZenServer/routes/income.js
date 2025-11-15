@@ -1,7 +1,14 @@
+// routes/income.js
 const express = require('express');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
-const { addIncome, getIncomes, deleteIncome } = require('../controllers/incomeController');
+const {
+  addIncome,
+  getIncomes,
+  deleteIncome,
+  getTotalIncome,     // ← NEW
+  deductFromIncome    // ← NEW
+} = require('../controllers/incomeController');
 const auth = require('../middleware/auth');
 
 // Validation middleware
@@ -16,9 +23,7 @@ const validateRequest = (req, res, next) => {
   next();
 };
 
-// @route   POST /api/income
-// @desc    Add new income
-// @access  Private
+// Existing routes
 router.post('/', auth, [
   body('source').trim().notEmpty().withMessage('Income source is required'),
   body('amount').isNumeric().withMessage('Amount must be a number')
@@ -27,14 +32,14 @@ router.post('/', auth, [
   validateRequest
 ], addIncome);
 
-// @route   GET /api/income
-// @desc    Get all user incomes
-// @access  Private
 router.get('/', auth, getIncomes);
-
-// @route   DELETE /api/income/:id
-// @desc    Delete income
-// @access  Private
 router.delete('/:id', auth, deleteIncome);
+
+// NEW ROUTES
+router.get('/total', auth, getTotalIncome);
+router.post('/deduct', auth, [
+  body('amount').isFloat({ min: 0.01 }).withMessage('Amount must be positive'),
+  validateRequest
+], deductFromIncome);
 
 module.exports = router;

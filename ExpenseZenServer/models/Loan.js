@@ -1,18 +1,10 @@
-// src/models/Loan.js
+// models/Loan.js
 const mongoose = require("mongoose");
 
 const loanSchema = new mongoose.Schema(
   {
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    type: {
-      type: String,
-      enum: ["lending", "borrowing"],
-      required: true,
-    },
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    type: { type: String, enum: ["lending", "borrowing"], required: true },
     amount: { type: Number, required: true },
     interestRate: { type: Number, default: 0 },
     startDate: { type: Date, required: true },
@@ -26,18 +18,10 @@ const loanSchema = new mongoose.Schema(
     borrowerPhone: String,
 
     lenderName: String,
-    category: {
-      type: String,
-      enum: ["Bank", "Friends", "Third Party"],
-      default: "Friends",
-    },
+    category: { type: String, enum: ["Bank", "Friends", "Third Party"], default: "Friends" },
     notes: String,
 
-    status: {
-      type: String,
-      enum: ["pending", "paid", "overdue"],
-      default: "pending",
-    },
+    status: { type: String, enum: ["pending", "paid", "overdue"], default: "pending" },
     paidDate: Date,
 
     remindersSent: {
@@ -49,22 +33,23 @@ const loanSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// FIXED: Convert strings to Date and calculate
+// CORRECT MONTH CALC
 loanSchema.pre("save", function (next) {
   const start = new Date(this.startDate);
   const due = new Date(this.dueDate);
 
-  if (isNaN(start) || isNaN(due)) {
-    return next(new Error("Invalid startDate or dueDate"));
+  if (isNaN(start.getTime()) || isNaN(due.getTime())) {
+    return next(new Error("Invalid date"));
   }
 
-  const months = Math.max(1, Math.ceil((due - start) / (1000 * 60 * 60 * 24 * 30)));
-  const interest = (this.amount * this.interestRate * months) / 100;
+  let months = (due.getFullYear() - start.getFullYear()) * 12;
+  months += due.getMonth() - start.getMonth();
+  if (due.getDate() < start.getDate()) months--;
+  months = Math.max(1, months);
 
+  const interest = (this.amount * this.interestRate * months) / 100;
   this.totalInterest = parseFloat(interest.toFixed(2));
   this.totalPayable = parseFloat((this.amount + interest).toFixed(2));
-
-  console.log("PRE SAVE: totalPayable =", this.totalPayable); // ← YOU WILL SEE THIS
 
   next();
 });

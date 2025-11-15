@@ -1,3 +1,4 @@
+// models/Income.js
 const mongoose = require('mongoose');
 
 const incomeSchema = new mongoose.Schema({
@@ -18,8 +19,8 @@ const incomeSchema = new mongoose.Schema({
   },
   date: {
     type: Date,
-    required: [true, 'Date is required'],
-    default: Date.now
+    default: Date.now  // ← DEFAULT TODAY
+    // removed 'required' → optional
   },
   notes: {
     type: String,

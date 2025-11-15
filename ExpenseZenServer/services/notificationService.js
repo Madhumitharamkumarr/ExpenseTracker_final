@@ -1,20 +1,9 @@
-// services/notificationService.js
+// services/notificationService.js — FINAL FIXED VERSION
 const Notification = require("../models/Notification");
 const Loan = require("../models/Loan");
 
-/**
- * Creates a notification if one doesn’t already exist for the same loan and type.
- */
-async function createNotification(
-  userId,
-  loanId,
-  type,
-  title,
-  message,
-  dueDate,
-  reminderDate
-) {
-  const existing = await Notification.findOne({ loan: loanId, type });
+async function createNotification(userId, loanId, type, title, message, dueDate, reminderDate) {
+  const existing = await Notification.findOne({ loan: loanId, type, reminderDate: reminderDate || null });
   if (existing) return existing;
 
   const notification = new Notification({
@@ -25,74 +14,78 @@ async function createNotification(
     message,
     dueDate,
     reminderDate,
+    isRead: false
   });
 
   await notification.save();
   return notification;
 }
 
-/**
- * Automatically generates notifications based on loan due dates.
- * Called daily by cron.
- */
 async function generateLoanNotifications() {
-  const loans = await Loan.find({});
-
+  const loans = await Loan.find({ status: { $ne: "paid" } });
   const now = new Date();
-  const twoDaysBefore = new Date(now);
-  twoDaysBefore.setDate(now.getDate() + 2);
+  now.setHours(0, 0, 0, 0);
 
   for (const loan of loans) {
-    if (loan.status === "paid") continue;
+    const due = new Date(loan.dueDate);
+    due.setHours(0, 0, 0, 0);
 
-    // Reminder 2 days before due
-    if (loan.dueDate && loan.dueDate.toDateString() === twoDaysBefore.toDateString()) {
+    const diffDays = Math.floor((due - now) / (1000 * 60 * 60 * 24));
+
+    // 15 days before
+    if (diffDays === 15) {
       await createNotification(
         loan.user,
         loan._id,
         "loan_reminder",
-        "⏰ Loan Due Soon",
-        `Your loan of ₹${loan.amount} is due in 2 days.`,
+        "Loan Due in 15 Days",
+        `₹${loan.amount} loan due on ${due.toLocaleDateString('en-IN')}`,
         loan.dueDate,
-        twoDaysBefore
+        new Date(due)
       );
     }
 
-    // On due date
-    if (loan.dueDate && loan.dueDate.toDateString() === now.toDateString()) {
+    // 2 days before
+    if (diffDays === 2) {
+      await createNotification(
+        loan.user,
+        loan._id,
+        "loan_reminder",
+        "Loan Due in 2 Days",
+        `₹${loan.amount} loan due soon!`,
+        loan.dueDate,
+        new Date(due)
+      );
+    }
+
+    // Due today
+    if (diffDays === 0) {
       await createNotification(
         loan.user,
         loan._id,
         "loan_due",
-        "📅 Loan Due Today",
-        `Your loan of ₹${loan.amount} is due today.`,
+        "Loan Due Today",
+        `₹${loan.amount} is due TODAY!`,
         loan.dueDate,
         null
       );
     }
 
     // Overdue
-    if (loan.dueDate && loan.dueDate < now) {
+    if (diffDays < 0 && loan.status !== "overdue") {
       await createNotification(
         loan.user,
         loan._id,
         "loan_overdue",
-        "⚠️ Loan Overdue",
-        `Your loan of ₹${loan.amount} was due on ${loan.dueDate.toDateString()}. Please repay soon.`,
+        "Loan Overdue",
+        `₹${loan.amount} was due on ${due.toLocaleDateString('en-IN')}`,
         loan.dueDate,
         null
       );
-
-      // Optionally update loan status to overdue
-      if (loan.status !== "overdue") {
-        loan.status = "overdue";
-        await loan.save();
-      }
+      loan.status = "overdue";
+      await loan.save();
     }
   }
 }
 
-module.exports = {
-  createNotification,
-  generateLoanNotifications
-};
+module.exports = { generateLoanNotifications };

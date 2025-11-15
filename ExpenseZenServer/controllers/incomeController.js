@@ -1,3 +1,4 @@
+// controllers/incomeController.js
 const Income = require('../models/Income');
 
 // @desc    Add new income
@@ -100,8 +101,74 @@ const deleteIncome = async (req, res) => {
   }
 };
 
+// NEW: GET TOTAL INCOME (FOR LENDING)
+// @route   GET /api/income/total
+// @access  Private
+const getTotalIncome = async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    const result = await Income.aggregate([
+      { $match: { user: userId } },
+      { $group: { _id: null, totalIncome: { $sum: "$amount" } } }
+    ]);
+
+    const total = result.length > 0 ? result[0].totalIncome : 0;
+
+    console.log(`User ${userId} total income: ₹${total}`);
+
+    res.json({ totalIncome: total });
+  } catch (error) {
+    console.error('Get Total Income Error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error while calculating total income',
+      error: error.message
+    });
+  }
+};
+
+// NEW: DEDUCT FROM INCOME (LENDING)
+// @route   POST /api/income/deduct
+// @access  Private
+const deductFromIncome = async (req, res) => {
+  try {
+    const { amount } = req.body;
+    const userId = req.user._id;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Amount must be positive'
+      });
+    }
+
+    await Income.create({
+      user: userId,
+      amount: -amount,
+      source: "Lent Money",
+      category: "Lending",
+      date: new Date(),
+      notes: "Auto-deducted on lending"
+    });
+
+    console.log(`Deducted ₹${amount} from user ${userId}`);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Deduct Income Error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error while deducting income',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   addIncome,
   getIncomes,
-  deleteIncome
+  deleteIncome,
+  getTotalIncome,     // ← EXPORT
+  deductFromIncome    // ← EXPORT
 };

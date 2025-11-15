@@ -6,12 +6,13 @@ const createBorrowIncome = async (loan, userId) => {
   try {
     await Income.create({
       user: userId,
-      source: `Borrowed from ${loan.lenderName || "Someone"}`, // source, not title
+      source: `Borrowed from ${loan.lenderName || "Someone"}`,
       amount: loan.amount,
-      category: "Other", // "Loan" not in enum → use "Other"
+      category: "Other", // CHANGE IF YOU HAVE "Loan" IN ENUM
       date: loan.startDate,
       notes: `Loan ID: ${loan._id} | Due: ${new Date(loan.dueDate).toLocaleDateString()}`,
     });
+    console.log("Borrow income created");
   } catch (error) {
     console.error("createBorrowIncome error:", error.message);
   }
@@ -21,18 +22,16 @@ const createLendingExpense = async (loan, userId) => {
   try {
     await Expense.create({
       user: userId,
-      name: `Lent to ${loan.borrowerName || "Someone"}`, // name, not title
+      name: `Lent to ${loan.borrowerName || "Someone"}`,
       amount: loan.amount,
-      category: "Other", // "Loan Given" NOT in enum → use "Other"
+      category: "Other", // CHANGE IF YOU HAVE "Lending" IN ENUM
       date: loan.startDate,
       notes: `Loan ID: ${loan._id} | Due: ${new Date(loan.dueDate).toLocaleDateString()}`,
     });
+    console.log("Lending expense created");
   } catch (error) {
     console.error("createLendingExpense error:", error.message);
   }
 };
 
-module.exports = {
-  createBorrowIncome,
-  createLendingExpense,
-};
+module.exports = { createBorrowIncome, createLendingExpense };
