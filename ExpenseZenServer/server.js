@@ -44,7 +44,7 @@ const authRoutes = require('./routes/auth');
 const expenseRoutes = require('./routes/expenses');
 const incomeRoutes = require('./routes/income');
 const analyticsRoutes = require('./routes/analytics');
-
+const notificationRoutes = require('./routes/notification');
 // ⭐ NEW — Loan route import
 const loanRoutes = require('./routes/loan');
 
@@ -56,6 +56,7 @@ app.use('/api/analytics', analyticsRoutes);
 
 // ⭐ NEW — Mount loan route
 app.use('/api/loan', loanRoutes);
+app.use('/api/notification', notificationRoutes);
 
 // 404 handler
 app.use((req, res) => {
