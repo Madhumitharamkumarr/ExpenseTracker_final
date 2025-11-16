@@ -11,7 +11,7 @@ const loanSchema = new mongoose.Schema(
     dueDate: { type: Date, required: true },
 
     totalInterest: { type: Number, default: 0 },
-    totalPayable: { type: Number, required: true },
+    totalPayable: { type: Number, default: 0},
 
     borrowerName: String,
     borrowerAddress: String,
@@ -33,7 +33,7 @@ const loanSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// CORRECT MONTH CALC
+// CALCULATE totalPayable BEFORE SAVE
 loanSchema.pre("save", function (next) {
   const start = new Date(this.startDate);
   const due = new Date(this.dueDate);

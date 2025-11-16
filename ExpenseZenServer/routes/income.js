@@ -7,7 +7,7 @@ const {
   getIncomes,
   deleteIncome,
   getTotalIncome,     // ← NEW
-  deductFromIncome    // ← NEW
+  // deductFromIncome    // ← NEW
 } = require('../controllers/incomeController');
 const auth = require('../middleware/auth');
 
@@ -37,9 +37,13 @@ router.delete('/:id', auth, deleteIncome);
 
 // NEW ROUTES
 router.get('/total', auth, getTotalIncome);
-router.post('/deduct', auth, [
-  body('amount').isFloat({ min: 0.01 }).withMessage('Amount must be positive'),
-  validateRequest
-], deductFromIncome);
+router.post('/deduct', (req, res) => {
+  console.warn(`BLOCKED: /api/income/deduct called by user ${req.user?._id}`);
+  return res.status(410).json({
+    success: false,
+    message: "Deprecated: This API is removed. Update your app!",
+    fix: "Remove incomeAPI.deductFromIncome() from AddLendingScreen.js"
+  });
+});
 
 module.exports = router;

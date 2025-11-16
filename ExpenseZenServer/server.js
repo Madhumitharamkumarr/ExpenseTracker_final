@@ -1,3 +1,5 @@
+// server.js — ADD THIS AT TOP
+delete require.cache[require.resolve('./controllers/analyticsController')];
 require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
 
 const express = require('express');
@@ -55,7 +57,7 @@ app.use('/api/income', incomeRoutes);
 app.use('/api/analytics', analyticsRoutes);
 
 // ⭐ NEW — Mount loan route
-app.use('/api/loan', loanRoutes);
+app.use('/api/loans', loanRoutes);
 app.use('/api/notification', notificationRoutes);
 
 // 404 handler
